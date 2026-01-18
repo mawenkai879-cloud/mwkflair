@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mwkflair"
+version = "1.0.0"
+description = "FLAIR with HarMA Adapter Integration for Vision-Language Learning"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "MWK"}
+]
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+keywords = ["vision-language", "CLIP", "FLAIR", "HarMA", "adapter", "fine-tuning"]
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "open_clip_torch>=2.20.0",
+    "transformers>=4.25.0",
+    "huggingface_hub>=0.14.0",
+    "Pillow>=9.0.0",
+    "numpy>=1.21.0",
+    "tqdm>=4.62.0",
+    "tensorboard>=2.10.0",
+    "timm>=0.9.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/mwkflair"
+Repository = "https://github.com/yourusername/mwkflair"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mwkflair*"]
+
+[tool.setuptools.package-data]
+mwkflair = ["model_configs/*.json"]
