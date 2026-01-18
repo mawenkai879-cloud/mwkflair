@@ -20,6 +20,8 @@ except ImportError:
 
 # Import HarMA modules for adaptive triplet loss
 from .harma_modules import AdaptiveTripletLoss, StandardTripletLoss
+# Import CS Alignment Loss for distributional alignment
+from .cs_alignment_loss import CSAlignmentLoss, CSInfoNCELoss
 
 
 def gather_features(
@@ -250,6 +252,11 @@ class FlairLoss(nn.Module):
             harma_margin=0.2,
             harma_gamma=2.0,
             harma_max_violation=False,
+            use_cs_alignment=False,
+            cs_loss_weight=0.3,
+            cs_sigma=1.0,
+            cs_use_infonce=False,
+            cs_temperature=0.07,
     ):
         super().__init__()
         self.cache_labels = cache_labels
@@ -281,6 +288,32 @@ class FlairLoss(nn.Module):
                         f"margin={harma_margin}, gamma={harma_gamma}")
         else:
             self.harma_loss_fn = None
+        
+        # === CS Alignment Integration ===
+        self.use_cs_alignment = use_cs_alignment
+        self.cs_loss_weight = cs_loss_weight
+        
+        if self.use_cs_alignment:
+            if cs_use_infonce:
+                # Use combined CS + InfoNCE loss
+                self.cs_loss_fn = CSInfoNCELoss(
+                    sigma=cs_sigma,
+                    temperature=cs_temperature,
+                    cs_weight=1.0,
+                    infonce_weight=1.0
+                )
+                logging.info(f"CS+InfoNCE loss initialized: weight={cs_loss_weight}, "
+                            f"sigma={cs_sigma}, temperature={cs_temperature}")
+            else:
+                # Use pure CS divergence loss
+                self.cs_loss_fn = CSAlignmentLoss(
+                    sigma=cs_sigma,
+                    trainable_sigma=False
+                )
+                logging.info(f"CS Alignment loss initialized: weight={cs_loss_weight}, "
+                            f"sigma={cs_sigma}")
+        else:
+            self.cs_loss_fn = None
 
 
     def _loss_with_attn_pool(self, image_features, image_tokens, text_features, logit_scale,
@@ -466,6 +499,9 @@ class FlairLoss(nn.Module):
 
         # === HarMA Loss Computation ===
         # Add adaptive triplet loss on HarMA-enhanced features as a regularization term
+        loss_harma = None
+        loss_cs = None
+        
         if self.use_harma and harma_image_features is not None and harma_text_features is not None:
             # Ensure features are normalized (should already be normalized in model.forward)
             if not torch.allclose(harma_image_features.norm(dim=-1), torch.ones(1, device=harma_image_features.device), atol=1e-3):
@@ -480,21 +516,50 @@ class FlairLoss(nn.Module):
             # Compute adaptive triplet loss
             loss_harma = self.harma_loss_fn(harma_image_features, harma_text_features_avg)
             
-            # Combine losses: FLAIR loss + weighted HarMA loss
-            total_loss = loss + self.harma_loss_weight * loss_harma
+            # Add weighted HarMA loss
+            loss = loss + self.harma_loss_weight * loss_harma
+        
+        # === CS Alignment Loss Computation ===
+        # Add CS divergence for distributional alignment between image and text features
+        if self.use_cs_alignment and harma_image_features is not None and harma_text_features is not None:
+            # Ensure features are normalized
+            if not torch.allclose(harma_image_features.norm(dim=-1), torch.ones(1, device=harma_image_features.device), atol=1e-3):
+                harma_image_features = F.normalize(harma_image_features, dim=-1)
+            if not torch.allclose(harma_text_features.norm(dim=-1), torch.ones(1, device=harma_text_features.device), atol=1e-3):
+                harma_text_features = F.normalize(harma_text_features, dim=-1)
             
-            if output_dict:
-                return {
-                    "contrastive_loss": total_loss,
-                    "flair_loss": loss,
-                    "harma_loss": loss_harma,
-                    "harma_loss_weight": self.harma_loss_weight
-                }
+            # Average text features: (B*K, D) -> (B, D)
+            harma_text_features_avg = harma_text_features.view(batch_size, num_captions, -1).mean(dim=1)
+            
+            # Compute CS divergence loss
+            if isinstance(self.cs_loss_fn, CSInfoNCELoss):
+                # Combined CS + InfoNCE
+                loss_cs_total, loss_cs_pure, loss_infonce = self.cs_loss_fn(
+                    harma_image_features, harma_text_features_avg
+                )
+                loss_cs = loss_cs_total
             else:
-                return total_loss
+                # Pure CS divergence
+                loss_cs = self.cs_loss_fn(harma_image_features, harma_text_features_avg)
+            
+            # Add weighted CS loss
+            loss = loss + self.cs_loss_weight * loss_cs
+        
+        # Return loss with optional detailed breakdown
+        if output_dict:
+            result = {
+                "contrastive_loss": loss,
+                "flair_loss": loss_flair,
+            }
+            if loss_harma is not None:
+                result["harma_loss"] = loss_harma
+                result["harma_loss_weight"] = self.harma_loss_weight
+            if loss_cs is not None:
+                result["cs_loss"] = loss_cs
+                result["cs_loss_weight"] = self.cs_loss_weight
+            return result
         else:
-            # No HarMA loss, return FLAIR loss only
-            return {"contrastive_loss": loss} if output_dict else loss
+            return loss
 
 
 

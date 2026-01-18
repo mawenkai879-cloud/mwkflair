@@ -24,6 +24,10 @@ from .factory import (
     get_model_config,
     load_checkpoint
 )
+from .cs_alignment_loss import (
+    CSAlignmentLoss,
+    CSInfoNCELoss
+)
 
 __version__ = "1.0.0"
 __author__ = "MWK"
@@ -50,4 +54,7 @@ __all__ = [
     "get_tokenizer",
     "get_model_config",
     "load_checkpoint",
+    # CS Alignment Loss
+    "CSAlignmentLoss",
+    "CSInfoNCELoss",
 ]
